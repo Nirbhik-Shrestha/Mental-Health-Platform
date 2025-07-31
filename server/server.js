@@ -7,6 +7,8 @@ import streakRoutes from './routes/streak.js';
 import forumRoutes from './routes/forum.js';
 import blogRoutes from "./routes/blog.js";
 import moodRoutes from "./routes/mood.js";
+import userRoutes from "./routes/user.js";
+import adminRoutes from "./routes/admin.js";
 
 
 
@@ -21,6 +23,8 @@ app.use("/api/auth", authRoutes);
 app.use('/api/forum', forumRoutes);
 app.use("/api/blogs", blogRoutes);
 app.use("/api/mood", moodRoutes);
+app.use("/api/me", userRoutes);
+app.use("/api/admin", adminRoutes);
 
 
 

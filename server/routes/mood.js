@@ -11,18 +11,18 @@ router.post("/", verifyToken, async (req, res) => {
 
 
   const now = new Date();
-const startOfDay = new Date(Date.UTC(now.getUTCFullYear(), now.getUTCMonth(), now.getUTCDate(), 0, 0, 0));
-const endOfDay = new Date(Date.UTC(now.getUTCFullYear(), now.getUTCMonth(), now.getUTCDate(), 23, 59, 59, 999));
+  const startOfDay = new Date(Date.UTC(now.getUTCFullYear(), now.getUTCMonth(), now.getUTCDate(), 0, 0, 0));
+  const endOfDay = new Date(Date.UTC(now.getUTCFullYear(), now.getUTCMonth(), now.getUTCDate(), 23, 59, 59, 999));
 
   try {
     const existing = await Mood.findOne({
-      userId,
-      createdAt: { $gte: startOfDay, $lte: endOfDay },
-    });
+      userId: req.user.id,
+      timestamp: { $gte: startOfDay, $lte: endOfDay }
+    }); 
     
     if (existing) {
-      return res.status(400).json({ message: "Mood already submitted for today." });
-    }
+  return res.status(409).json({ message: "Mood already logged today" });
+}
 
     console.log(existing)
     console.log(startOfDay)
@@ -36,5 +36,41 @@ const endOfDay = new Date(Date.UTC(now.getUTCFullYear(), now.getUTCMonth(), now.
     res.status(500).json({ message: "Error saving mood", error: err.message });
   }
 });
+
+
+router.get("/today", verifyToken, async (req, res) => {
+  const now = new Date();
+  const startOfDay = new Date(Date.UTC(now.getUTCFullYear(), now.getUTCMonth(), now.getUTCDate(), 0, 0, 0));
+  const endOfDay = new Date(Date.UTC(now.getUTCFullYear(), now.getUTCMonth(), now.getUTCDate(), 23, 59, 59, 999));
+
+  try {
+    const moodEntry = await Mood.findOne({
+      userId: req.user.id,
+      timestamp: { $gte: startOfDay, $lte: endOfDay }
+    });
+
+    if (moodEntry) {
+      res.json({ mood: moodEntry.mood });
+    } else {
+      res.status(404).json({ message: "No mood logged today" });
+    }
+  } catch (err) {
+    console.error("Error fetching today's mood:", err);
+    res.status(500).json({ message: "Error fetching today's mood", error: err.message });
+  }
+});
+
+// Get mood history
+router.get("/history", verifyToken, async (req, res) => {
+  try {
+    const moods = await Mood.find({ userId: req.user.id })
+      .sort({ timestamp: -1 }); // most recent first
+    res.json(moods);
+  } catch (err) {
+    console.error("Error fetching mood history:", err);
+    res.status(500).json({ message: "Error fetching mood history", error: err.message });
+  }
+});
+
 
 export default router;

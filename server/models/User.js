@@ -22,7 +22,13 @@ moodHistory: [
     mood: { type: String, required: true },
     timestamp: { type: Date, default: Date.now },
   }
-]
+],
+role: {
+  type: String,
+  enum: ['user', 'admin'],
+  default: 'user',
+}
+
 
 });
 

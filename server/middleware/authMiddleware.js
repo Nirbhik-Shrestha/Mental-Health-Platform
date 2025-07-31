@@ -11,8 +11,11 @@ const authMiddleware = (req, res, next) => {
 
   try {
     const decoded = jwt.verify(token, process.env.JWT_SECRET);
-    req.user = { id: decoded.id }; // <- This must be correct
+    req.user = { id: decoded.id, role: decoded.role }; 
     next();
+    console.log("User decoded from token:", decoded);
+    console.log("req.user:", req.user);
+
   } catch (err) {
     res.status(403).json({ message: "Forbidden" });
   }
