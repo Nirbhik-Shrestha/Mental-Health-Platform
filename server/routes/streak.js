@@ -1,6 +1,6 @@
 import express from 'express';
 import { updateStreak } from '../controllers/streakController.js';
-import { verifyToken } from '../middleware/auth.js'; // or wherever it’s defined
+import { verifyToken } from '../middleware/auth.js'; 
 import User from '../models/User.js';
 
 const router = express.Router();
