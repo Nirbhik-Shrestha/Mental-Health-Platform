@@ -9,7 +9,7 @@ import blogRoutes from "./routes/blog.js";
 import moodRoutes from "./routes/mood.js";
 import userRoutes from "./routes/user.js";
 import adminRoutes from "./routes/admin.js";
-
+import centerRoutes from "./routes/center.js";
 
 
 
@@ -25,6 +25,7 @@ app.use("/api/blogs", blogRoutes);
 app.use("/api/mood", moodRoutes);
 app.use("/api/me", userRoutes);
 app.use("/api/admin", adminRoutes);
+app.use("/api/centers", centerRoutes);
 
 
 
