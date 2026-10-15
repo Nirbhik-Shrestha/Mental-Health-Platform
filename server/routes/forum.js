@@ -1,6 +1,7 @@
 import express from "express";
 import authMiddleware from "../middleware/authMiddleware.js";
 import ForumPost from "../models/ForumPost.js";
+import analyzeSentiment from "../utils/sentiment.js";
 
 const router = express.Router();
 
@@ -15,10 +16,37 @@ router.post("/", authMiddleware, async (req, res) => {
   const { content } = req.body;
   if (!content) return res.status(400).json({ message: "Post content is required" });
 
-  const post = await ForumPost.create({ author: req.user.id, content });
-  const populatedPost = await post.populate("author", "username");
-  res.status(201).json({ post: populatedPost });
+  try {
+    const sentiment = await analyzeSentiment(content);
+
+    // Check last 3 posts of user
+    const lastPosts = await ForumPost.find({ author: req.user.id })
+      .sort({ createdAt: -1 })
+      .limit(3);
+
+    const allNegative = lastPosts.length === 3 && lastPosts.every(post => post.sentiment === "negative");
+
+    const post = await ForumPost.create({
+      author: req.user.id,
+      content,
+      sentiment,
+    });
+
+    const populatedPost = await post.populate("author", "username");
+
+    const response = { post: populatedPost };
+    if (allNegative) {
+      response.warning =
+        "Your last 3 posts were strongly negative – consider a breathing session or talking to someone.";
+    }
+
+    res.status(201).json(response);
+  } catch (err) {
+    console.error("Post creation error:", err);
+    res.status(500).json({ message: "Failed to create post" });
+  }
 });
+
 
 // Toggle like
 router.post("/:id/like", authMiddleware, async (req, res) => {

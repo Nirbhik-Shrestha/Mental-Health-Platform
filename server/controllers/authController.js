@@ -57,7 +57,7 @@ export const login = async (req, res) => {
   }
   
 };
-// ✅ Correct for ES modules
+
 export const updateStreak = async (req, res) => {
   const userId = req.user.id;
   const user = await User.findById(userId);

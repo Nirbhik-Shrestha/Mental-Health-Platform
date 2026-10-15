@@ -16,7 +16,6 @@ const userSchema = new mongoose.Schema({
     default: () =>
       new Date(new Date().toLocaleString("en-US", { timeZone: "Asia/Kathmandu" })),
   },
-  // Example in Mongoose (user.model.js)
 moodHistory: [
   {
     mood: { type: String, required: true },

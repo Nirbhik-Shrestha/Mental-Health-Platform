@@ -11,6 +11,12 @@ const forumPostSchema = new mongoose.Schema({
       createdAt: { type: Date, default: Date.now },
     },
   ],
+  sentiment: {
+  type: String,
+  enum: ["positive", "neutral", "negative"],
+  default: "neutral",
+}
+
 }, { timestamps: true });
 
 
