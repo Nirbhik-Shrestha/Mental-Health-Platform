@@ -1,0 +1,34 @@
+import mongoose from "mongoose";
+
+const userSchema = new mongoose.Schema({
+  username: { type: String, required: true },
+  password: { type: String, required: true },
+  email: { type: String, required: true },
+  contact: { type: String, required: true },
+  address: { type: String },
+  dob: { type: Date },
+  streak: {
+    type: Number,
+    default: 1,
+  },
+  lastActiveDate: {
+    type: Date,
+    default: () =>
+      new Date(new Date().toLocaleString("en-US", { timeZone: "Asia/Kathmandu" })),
+  },
+moodHistory: [
+  {
+    mood: { type: String, required: true },
+    timestamp: { type: Date, default: Date.now },
+  }
+],
+role: {
+  type: String,
+  enum: ['user', 'admin'],
+  default: 'user',
+}
+
+
+});
+
+export default mongoose.model("User", userSchema);
