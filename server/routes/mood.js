@@ -1,76 +1,107 @@
-// routes/mood.js
-import Mood from "../models/Mood.js";
-import { verifyToken } from "../middleware/auth.js";
 import express from "express";
+import { z } from "zod";
+import Mood from "../models/Mood.js";
+import { requireAuth } from "../middleware/auth.js";
+import { validate } from "../middleware/validate.js";
+import { optionalText } from "../lib/schemas.js";
+import { encrypt, decrypt } from "../lib/crypto.js";
+import { toDay, addDays } from "../lib/dates.js";
+import { MOODS, MOOD_TAGS, MOOD_SCORES, currentStreak, longestStreak } from "../lib/moods.js";
+import { supportSignals } from "../lib/support.js";
+import { maybeAutoAlert } from "../lib/trustedContact.js";
 
 const router = express.Router();
+router.use(requireAuth);
 
-router.post("/", verifyToken, async (req, res) => {
-  const userId = req.user.id;
-  const { mood } = req.body;
+const serialize = (entry) => ({
+  _id: entry._id,
+  day: entry.day,
+  mood: entry.mood,
+  tags: entry.tags ?? [],
+  note: decrypt(entry.note) ?? "",
+  timestamp: entry.timestamp,
+});
 
-
-  const now = new Date();
-  const startOfDay = new Date(Date.UTC(now.getUTCFullYear(), now.getUTCMonth(), now.getUTCDate(), 0, 0, 0));
-  const endOfDay = new Date(Date.UTC(now.getUTCFullYear(), now.getUTCMonth(), now.getUTCDate(), 23, 59, 59, 999));
-
-  try {
-    const existing = await Mood.findOne({
-      userId: req.user.id,
-      timestamp: { $gte: startOfDay, $lte: endOfDay }
-    }); 
-    
-    if (existing) {
-  return res.status(409).json({ message: "Mood already logged today" });
+async function streakFor(userId) {
+  const days = await Mood.distinct("day", { userId });
+  return { streak: currentStreak(days, toDay()), longestStreak: longestStreak(days), totalDays: days.length };
 }
 
-    console.log(existing)
-    console.log(startOfDay)
-    console.log(endOfDay)
-
-    const newMood = new Mood({ userId, mood });
-    await newMood.save();
-    res.status(201).json({ message: "Mood recorded", mood: newMood });
-  } catch (err) {
-    console.error("Error saving mood:", err);
-    res.status(500).json({ message: "Error saving mood", error: err.message });
-  }
+router.get("/options", (_req, res) => {
+  res.json({ moods: MOODS, tags: MOOD_TAGS });
 });
 
+const checkInSchema = z.object({
+  mood: z.enum(MOODS),
+  tags: z.array(z.enum(MOOD_TAGS)).max(MOOD_TAGS.length).default([]),
+  note: optionalText(1000),
+});
 
-router.get("/today", verifyToken, async (req, res) => {
-  const now = new Date();
-  const startOfDay = new Date(Date.UTC(now.getUTCFullYear(), now.getUTCMonth(), now.getUTCDate(), 0, 0, 0));
-  const endOfDay = new Date(Date.UTC(now.getUTCFullYear(), now.getUTCMonth(), now.getUTCDate(), 23, 59, 59, 999));
+// Log today's check-in, or update it if one already exists.
+router.post("/", validate(checkInSchema), async (req, res) => {
+  const { mood, tags, note } = req.body;
+  const update = { $set: { mood, tags: [...new Set(tags)], timestamp: new Date() } };
+  if (note) update.$set.note = encrypt(note);
+  else update.$unset = { note: 1 };
 
-  try {
-    const moodEntry = await Mood.findOne({
-      userId: req.user.id,
-      timestamp: { $gte: startOfDay, $lte: endOfDay }
-    });
+  const entry = await Mood.findOneAndUpdate({ userId: req.user._id, day: toDay() }, update, {
+    upsert: true,
+    new: true,
+    setDefaultsOnInsert: true,
+  });
+  const [streak, support] = await Promise.all([streakFor(req.user._id), supportSignals(req.user._id)]);
+  const contactNotified = await maybeAutoAlert(req.user._id, support).catch(() => false);
+  res.status(201).json({ entry: serialize(entry), ...streak, support, contactNotified });
+});
 
-    if (moodEntry) {
-      res.json({ mood: moodEntry.mood });
-    } else {
-      res.status(404).json({ message: "No mood logged today" });
+router.get("/today", async (req, res) => {
+  const entry = await Mood.findOne({ userId: req.user._id, day: toDay() });
+  res.json({ entry: entry ? serialize(entry) : null });
+});
+
+const rangeSchema = z.object({ days: z.coerce.number().int().min(1).max(3650).default(365) });
+
+router.get("/history", validate(rangeSchema, "query"), async (req, res) => {
+  const since = addDays(toDay(), -(req.validQuery.days - 1));
+  const entries = await Mood.find({ userId: req.user._id, day: { $gte: since } }).sort({ day: -1 });
+  res.json({ entries: entries.map(serialize) });
+});
+
+router.get("/insights", validate(rangeSchema, "query"), async (req, res) => {
+  const userId = req.user._id;
+  const today = toDay();
+  const since = addDays(today, -(req.validQuery.days - 1));
+  const entries = await Mood.find({ userId, day: { $gte: since } }).sort({ day: 1 }).lean();
+
+  const distribution = Object.fromEntries(MOODS.map((mood) => [mood, 0]));
+  const tagTotals = {};
+  let scoreSum = 0;
+  for (const { mood, tags = [] } of entries) {
+    distribution[mood] += 1;
+    scoreSum += MOOD_SCORES[mood];
+    for (const tag of tags) {
+      tagTotals[tag] ??= { sum: 0, count: 0 };
+      tagTotals[tag].sum += MOOD_SCORES[mood];
+      tagTotals[tag].count += 1;
     }
-  } catch (err) {
-    console.error("Error fetching today's mood:", err);
-    res.status(500).json({ message: "Error fetching today's mood", error: err.message });
   }
-});
+  const round = (n) => Math.round(n * 100) / 100;
 
-// Get mood history
-router.get("/history", verifyToken, async (req, res) => {
-  try {
-    const moods = await Mood.find({ userId: req.user.id })
-      .sort({ timestamp: -1 }); // most recent first
-    res.json(moods);
-  } catch (err) {
-    console.error("Error fetching mood history:", err);
-    res.status(500).json({ message: "Error fetching mood history", error: err.message });
-  }
+  const [streak, support] = await Promise.all([streakFor(userId), supportSignals(userId)]);
+  res.json({
+    range: { from: since, to: today, days: req.validQuery.days },
+    ...streak,
+    checkIns: entries.length,
+    average: entries.length ? round(scoreSum / entries.length) : null,
+    distribution,
+    trend: entries.map(({ day, mood }) => ({ day, mood, score: MOOD_SCORES[mood] })),
+    // Average mood on days with each tag - hints at what helps or hurts.
+    tags: Object.entries(tagTotals)
+      .map(([tag, { sum, count }]) => ({ tag, count, average: round(sum / count) }))
+      .sort((a, b) => b.count - a.count),
+    scale: MOOD_SCORES,
+    support,
+  });
 });
-
 
 export default router;
